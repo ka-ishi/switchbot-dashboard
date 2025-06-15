@@ -26,23 +26,26 @@ query_api = client.query_api()
 # SwitchBot
 ACCESS_TOKEN: str = os.environ["SWITCHBOT_ACCESS_TOKEN"]
 SECRET: str = os.environ["SWITCHBOT_SECRET"]
+SUPPORTED_DEVICES = ["Meter", "MeterPlus", "WoIOSensor", "MeterPro", "MeterPro(CO2)", "Humidifier", "Hub 2", "Hub 3"]
+CO2_DEVICES = ["MeterPro(CO2)"]
 
-
-def save_device_status(status: dict):
+def save_device_status(status: dict, devicename: str):
     """SwitchbotデバイスのステータスをInfluxDBに保存する"""
 
     device_type = status.get("deviceType")
 
-    if device_type == "MeterPlus":
-        p = (
-            Point("MeterPlus")
-            .tag("device_id", status["deviceId"])
-            .field("humidity", float(status["humidity"]))
-            .field("temperature", float(status["temperature"]))
-        )
-
-        write_api.write(bucket=bucket, record=p)
-        logging.info(f"Saved: {status}")
+    p = (
+        Point("weather")
+        .tag("device_id", status["deviceId"])
+        .tag("device_name", devicename)
+        .field("temperature", float(status["temperature"]))
+        .field("humidity", float(status["humidity"]))
+    )
+    if device_type in CO2_DEVICES:
+        p = p.field("CO2", float(status["CO2"]))
+    
+    write_api.write(bucket=bucket, record=p)
+    logging.info(f"Saved: {status}")
 
 
 def task():
@@ -54,15 +57,16 @@ def task():
 
     for d in device_list:
         device_type = d.get("deviceType")
-        if device_type == "MeterPlus":
+        if device_type in SUPPORTED_DEVICES:
             try:
                 status = bot.get_device_status(d.get("deviceId"))
+                devicename = d.get("deviceName")
             except Exception as e:
                 logging.error(f"Request error: {e}")
                 continue
 
             try:
-                save_device_status(status)
+                save_device_status(status, devicename)
             except Exception as e:
                 logging.error(f"Save error: {e}")
 
